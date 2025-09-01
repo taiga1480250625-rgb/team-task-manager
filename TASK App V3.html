@@ -1,0 +1,519 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>チーム対応タスク管理（単一HTML・モバイル対応）</title>
+  <style>
+    :root { --bg:#f6f7f9; --fg:#111827; --card:#fff; --muted:#6b7280; --line:#e5e7eb; --accent:#111827; --ok:#16a34a; }
+    *{box-sizing:border-box} html,body{height:100%}
+    body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,"Apple Color Emoji","Segoe UI Emoji"}
+    .container{max-width:1200px;margin:0 auto;padding:16px}
+    @media (min-width:640px){ .container{padding:24px} }
+    .card{background:var(--card);border:1px solid var(--line);border-radius:16px;box-shadow:0 1px 2px rgba(0,0,0,.04)}
+    .row{display:flex;gap:12px;flex-wrap:wrap}
+    .col{flex:1 1 160px}
+    .h{margin:0 0 6px;font-size:12px;color:var(--muted)}
+    .input,select,textarea{width:100%;padding:12px;border:1px solid var(--line);border-radius:12px;background:#fff;font-size:14px}
+    textarea{resize:vertical}
+    .btn{padding:10px 14px;border-radius:12px;border:1px solid var(--line);background:#fff;cursor:pointer}
+    .btn.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+    .btn.ok{background:var(--ok);color:#fff;border-color:var(--ok)}
+    .btn.danger{background:#fff;color:#b91c1c;border-color:#fecaca}
+    .toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 16px;border-bottom:1px solid var(--line)}
+    .section{padding:16px}
+    .badge{font-size:12px;padding:2px 8px;border-radius:999px;display:inline-block}
+    .b-status{background:#f3f4f6;color:#374151}
+    .task{padding:14px 16px;border:1px solid var(--line);border-radius:16px;background:#fff}
+    .muted{color:var(--muted)}
+    .chips{display:flex;flex-wrap:wrap;gap:6px}
+    .list{display:flex;flex-direction:column;gap:12px}
+    .grid{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:flex-start}
+    .row-center{display:flex;gap:8px;align-items:center}
+    .xsmall{font-size:12px}
+    .danger-text{color:#b91c1c}
+    .tabs{display:flex;gap:6px;flex-wrap:wrap}
+    .tab{padding:8px 12px;border:1px solid var(--line);border-radius:999px;background:#fff;cursor:pointer;font-size:13px}
+    .tab.active{background:#111827;color:#fff;border-color:#111827}
+    .title-btn{display:inline-block;border:1px solid var(--line);background:#fff;border-radius:10px;padding:6px 10px;font-weight:600;cursor:pointer}
+    .check{appearance:none;width:22px;height:22px;border-radius:6px;border:2px solid #d1d5db;display:grid;place-items:center;cursor:pointer}
+    .check.done{background:#16a34a;border-color:#16a34a;color:#fff}
+    .check > span{font-size:14px;line-height:1}
+    /* Modal */
+    .modal{position:fixed;inset:0;background:rgba(0,0,0,.35);display:grid;place-items:center;padding:16px;z-index:50}
+    .modal .panel{max-width:520px;width:100%;background:#fff;border:1px solid var(--line);border-radius:16px;padding:20px;box-shadow:0 10px 30px rgba(0,0,0,.12)}
+    .modal .actions{display:flex;gap:12px;justify-content:flex-end;margin-top:16px}
+    .big-ok{font-size:18px;padding:14px 18px;border-radius:14px}
+    .pill{display:inline-flex;gap:8px;align-items:center;border:1px solid var(--line);border-radius:999px;padding:6px 10px;background:#fff}
+    .sep{height:1px;background:var(--line);margin:8px 0}
+    .hint{font-size:12px;color:var(--muted)}
+    .k{background:#eef2ff;border:1px solid #e0e7ff}
+  </style>
+  <script src="https://apis.google.com/js/api.js" async defer></script>
+  <!-- Firebase v9 modular via CDN -->
+  <script type="module" id="firebase-sdk">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
+    import { getAuth, GoogleAuthProvider, signInWithPopup, signOut as fbSignOut, onAuthStateChanged, signInAnonymously } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-auth.js";
+    import { getFirestore, collection, addDoc, doc, setDoc, updateDoc, deleteDoc, onSnapshot, query, orderBy, serverTimestamp, getDoc } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore.js";
+    window._fb = { initializeApp, getAuth, GoogleAuthProvider, signInWithPopup, fbSignOut, onAuthStateChanged, signInAnonymously, getFirestore, collection, addDoc, doc, setDoc, updateDoc, deleteDoc, onSnapshot, query, orderBy, serverTimestamp, getDoc };
+  </script>
+</head>
+<body>
+  <div class="container">
+    <div class="card" style="padding:16px 16px 0; margin-bottom:16px;">
+      <div class="toolbar">
+        <div class="row-center">
+          <div style="width:36px;height:36px;border-radius:12px;background:#111827;color:#fff;display:grid;place-items:center;font-weight:700">T</div>
+          <div>
+            <div style="font-weight:600">チーム対応タスク管理（単一HTML）</div>
+            <div class="xsmall muted">ローカル保存 / 共有（Firebase） / Googleカレンダー連携 / JSON入出力</div>
+          </div>
+        </div>
+        <div class="row-center xsmall">
+          <button id="exportBtn" class="btn">エクスポート</button>
+          <input id="importFile" type="file" accept="application/json" style="display:none" />
+          <button id="importBtn" class="btn">インポート</button>
+          <button id="settingsBtn" class="btn">設定</button>
+        </div>
+      </div>
+
+      <!-- Connection mode -->
+      <div class="section">
+        <div class="row" style="align-items:center;justify-content:space-between">
+          <div class="row-center">
+            <span class="h">保存先</span>
+            <label class="pill"><input type="radio" name="mode" id="modeLocal" checked> <span>ローカル</span></label>
+            <label class="pill"><input type="radio" name="mode" id="modeCloud"> <span>共有（Firebase）</span></label>
+          </div>
+          <div class="row-center hint">
+            <span>※ 共有モードはFirebaseの設定が必要です。URLを配れば「誰でもアクセス可」（権限はFirestoreルールで制御）。</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Firebase (Cloud) Settings -->
+      <div class="section" id="cloudSec" style="display:none">
+        <details>
+          <summary style="font-weight:600;cursor:pointer">共有（Firebase）設定</summary>
+          <div class="row" style="margin-top:12px;align-items:flex-end">
+            <div class="col"><div class="h">apiKey</div><input class="input" id="fbApiKey" placeholder="Firebase apiKey"/></div>
+            <div class="col"><div class="h">authDomain</div><input class="input" id="fbAuthDomain" placeholder="yourapp.firebaseapp.com"/></div>
+            <div class="col"><div class="h">projectId</div><input class="input" id="fbProjectId" placeholder="yourapp"/></div>
+            <div class="row-center">
+              <button class="btn" id="fbInitBtn">初期化</button>
+              <button class="btn primary" id="fbSignInBtn">Googleでサインイン</button>
+              <button class="btn" id="fbAnonBtn">匿名で参加</button>
+              <button class="btn" id="fbSignOutBtn">サインアウト</button>
+            </div>
+          </div>
+          <div class="sep"></div>
+          <div class="hint">・Googleサインイン/匿名参加どちらでも参加可にできます（Firestoreルールで制御）。<br>・「設定」→「選択肢編集」で担当者/優先度/ステータスを共有設定として保存します。</div>
+        </details>
+      </div>
+
+      <!-- Google Calendar (unchanged basic) -->
+      <div class="section" id="gcalSec">
+        <details>
+          <summary style="font-weight:600;cursor:pointer">Googleカレンダー連携</summary>
+          <div class="row" style="margin-top:12px;align-items:flex-end">
+            <div class="col">
+              <div class="h">API Key</div>
+              <input class="input" id="apiKey" placeholder="Google CloudのAPIキー" />
+            </div>
+            <div class="col">
+              <div class="h">OAuth Client ID</div>
+              <input class="input" id="clientId" placeholder="OAuth 2.0 クライアントID（個人/法人どちらのアカウントでもログイン可）" />
+            </div>
+            <div class="row-center">
+              <button class="btn" id="initBtn">初期化</button>
+              <button class="btn primary" id="signInBtn">Googleでサインイン</button>
+              <button class="btn" id="signOutBtn">サインアウト</button>
+              <button class="btn" id="calFetchBtn">カレンダー取得</button>
+            </div>
+          </div>
+          <div class="section" style="padding-left:0">
+            <div class="h">登録先カレンダー（複数選択可）</div>
+            <div id="calList" class="chips"></div>
+            <div class="xsmall muted" style="margin-top:8px">* 期限は終日予定として登録します（開始=期限、終了=翌日）。説明欄に担当者・優先度・ステータス・メモ・振り返りを含めます。</div>
+          </div>
+        </details>
+      </div>
+
+      <!-- Quick Add -->
+      <div class="section">
+        <div class="row">
+          <div class="col" style="flex:2">
+            <div class="h">タイトル</div>
+            <input class="input" id="qTitle" placeholder="例：見積書送付" />
+          </div>
+          <div class="col">
+            <div class="h">期限</div>
+            <input class="input" id="qDue" type="date" />
+          </div>
+          <div class="col">
+            <div class="h">担当者</div>
+            <select id="qAssignee" class="input"></select>
+          </div>
+          <div class="col">
+            <div class="h">優先度</div>
+            <select id="qPriority" class="input"></select>
+          </div>
+          <div class="col">
+            <div class="h">ステータス</div>
+            <select id="qStatus" class="input"></select>
+          </div>
+          <div class="col" style="flex:2">
+            <div class="h">メモ</div>
+            <input id="qMemo" class="input" />
+          </div>
+          <div class="col" style="flex:2">
+            <div class="h">振り返り</div>
+            <input id="qReview" class="input" />
+          </div>
+        </div>
+        <div class="row" style="margin-top:8px;align-items:center">
+          <button class="btn primary" id="addBtn">追加（Shift+Enter）</button>
+          <span class="xsmall muted">* タイトル入力中に <b>Shift+Enter</b> でも追加。期限は必須。</span>
+        </div>
+      </div>
+
+      <!-- Tabs -->
+      <div class="section">
+        <div class="tabs" id="tabs"></div>
+      </div>
+    </div>
+
+    <div class="list" id="list"></div>
+
+    <div class="xsmall muted" style="text-align:center;margin:24px 0">© <span id="year"></span> チーム対応タスク管理 — ローカル保存/共有。URL共有でチーム利用可（Firebase設定要）。</div>
+  </div>
+
+<!-- Settings Modal -->
+<div class="modal" id="settingsModal" style="display:none">
+  <div class="panel">
+    <div style="font-weight:600;margin-bottom:8px">設定</div>
+    <div class="hint" style="margin-bottom:8px">担当者/優先度/ステータスの選択肢をカンマ区切りで編集できます。共有モードではチーム全体に反映されます。</div>
+    <div class="row">
+      <div class="col"><div class="h">担当者リスト</div><input class="input" id="optAssignees" placeholder="例：山田, 佐藤, 鈴木"/></div>
+      <div class="col"><div class="h">優先度リスト</div><input class="input" id="optPriorities" placeholder="例：高, 中, 低, 未来"/></div>
+      <div class="col"><div class="h">ステータスリスト</div><input class="input" id="optStatuses" placeholder="例：Non touch, Doing, Passed"/></div>
+    </div>
+    <div class="actions">
+      <button class="btn" id="settingsCancel">閉じる</button>
+      <button class="btn ok" id="settingsSave">保存</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  const STORAGE_KEY = 'pf_team_tasks_html_v1';
+  const GCAL_KEY   = 'pf_gcal_conf_html_v2';
+  const FB_KEY     = 'pf_fb_conf_html_v1';
+  const OPT_KEY    = 'pf_option_lists_v1';
+
+  const $ = (id)=>document.getElementById(id);
+  $('year').textContent = new Date().getFullYear();
+
+  // ---------- Option lists (editable) ----------
+  let OPTIONS = loadOptions() || {
+    assignees: ['未割当'],
+    priorities: ['高','中','低','未来'],
+    statuses: ['Non touch','Doing','Passed'], // Doneはチェックで完了
+  };
+
+  // ---------- State ----------
+  let tasks = loadTasks(); // {completed:boolean}
+  let currentTab = 'all'; // all | completed | status values
+  let calendars = []; // {id, summary}
+  let selectedCalendars = new Set();
+  let gapiInited = false;
+
+  // Firebase state
+  let mode = 'local'; // local | cloud
+  let fbApp=null, fbAuth=null, fbDb=null, fbUnsubTasks=null, fbUnsubSettings=null; // listeners
+  const fbConf = loadFbConf();
+
+  // Elements
+  const listEl = $('list');
+
+  // Populate selects from OPTIONS
+  function populateQuickSelects(){
+    fillSelect('qAssignee', OPTIONS.assignees);
+    fillSelect('qPriority', OPTIONS.priorities, '中');
+    fillSelect('qStatus', OPTIONS.statuses, 'Non touch');
+  }
+  function fillSelect(id, arr, def){ const el=$(id); el.innerHTML=''; arr.forEach(v=>{ const o=document.createElement('option'); o.textContent=v; el.appendChild(o); }); if(def) el.value=def; }
+  populateQuickSelects();
+
+  // Quick add inputs & events
+  const qTitle=$('qTitle'), qDue=$('qDue'), qAssignee=$('qAssignee'), qPriority=$('qPriority'), qStatus=$('qStatus'), qMemo=$('qMemo'), qReview=$('qReview');
+  $('addBtn').onclick = addQuick;
+  qTitle.addEventListener('keydown', e=>{ if(e.key==='Enter' && e.shiftKey){ e.preventDefault(); addQuick(); } });
+
+  // Tabs
+  const tabs = [{id:'all', label:'一覧'},{id:'completed', label:'完了リスト'}];
+  function refreshTabs(){
+    // add status tabs dynamically from OPTIONS.statuses
+    const dynamic = OPTIONS.statuses.map(s=>({id:s, label:s+'リスト'}));
+    const t = [...tabs, ...dynamic];
+    const tabsEl = $('tabs'); tabsEl.innerHTML='';
+    t.forEach(tab=>{ const b=document.createElement('button'); b.className='tab'+(currentTab===tab.id?' active':''); b.textContent=tab.label; b.onclick=()=>{ currentTab=tab.id; render(); }; tabsEl.appendChild(b); });
+  }
+  refreshTabs();
+
+  // Import/Export
+  $('exportBtn').onclick = ()=>{
+    const blob = new Blob([JSON.stringify({ tasks, options: OPTIONS },null,2)],{type:'application/json'});
+    const url = URL.createObjectURL(blob); const a=document.createElement('a');
+    const ts=new Date().toISOString().slice(0,19).replace(/[:T]/g,'-');
+    a.href=url; a.download=`team-tasks-${ts}.json`; a.click(); URL.revokeObjectURL(url);
+  };
+  $('importBtn').onclick = ()=> $('importFile').click();
+  $('importFile').onchange = (e)=>{
+    const f=e.target.files && e.target.files[0]; if(!f) return; const r=new FileReader(); r.onload=()=>{
+      try{ const data=JSON.parse(String(r.result));
+        const arr = Array.isArray(data)? data : data.tasks; // backward compat
+        const opts = Array.isArray(data)? null : data.options;
+        tasks = (arr||[]).map(t=>({ id: t.id||uid(), title: t.title||'(無題)', memo: t.memo||'', review: t.review||'', due: t.due||undefined,
+          assignee: t.assignee||OPTIONS.assignees[0]||'未割当', priority: t.priority||OPTIONS.priorities[1]||'中', status: t.status||OPTIONS.statuses[0]||'Non touch',
+          createdAt: typeof t.createdAt==='number'?t.createdAt:Date.now(), updatedAt: Date.now(), completedAt: typeof t.completedAt==='number'?t.completedAt:undefined,
+          completed: !!t.completed, calendarEventIds: t.calendarEventIds||{} }));
+        if(opts){ OPTIONS = sanitizeOptions(opts); saveOptions(); populateQuickSelects(); refreshTabs(); }
+        saveTasks(); render();
+      }catch(err){ alert('インポートに失敗: '+err.message); }
+    }; r.readAsText(f);
+  };
+
+  // Settings modal (option lists)
+  const settingsModal=$('settingsModal');
+  $('settingsBtn').onclick=()=>{
+    $('optAssignees').value = OPTIONS.assignees.join(', ');
+    $('optPriorities').value = OPTIONS.priorities.join(', ');
+    $('optStatuses').value = OPTIONS.statuses.join(', ');
+    settingsModal.style.display='grid';
+  };
+  $('settingsCancel').onclick=()=> settingsModal.style.display='none';
+  $('settingsSave').onclick=async()=>{
+    const opts = sanitizeOptions({
+      assignees: $('optAssignees').value.split(',').map(s=>s.trim()).filter(Boolean),
+      priorities: $('optPriorities').value.split(',').map(s=>s.trim()).filter(Boolean),
+      statuses: $('optStatuses').value.split(',').map(s=>s.trim()).filter(Boolean),
+    });
+    OPTIONS = opts; saveOptions(); populateQuickSelects(); refreshTabs(); settingsModal.style.display='none';
+    if(mode==='cloud' && fbDb){ await saveOptionsCloud(); }
+  };
+
+  function sanitizeOptions(o){
+    const uniq = (arr)=> Array.from(new Set(arr));
+    let assignees = uniq((o.assignees||[]).filter(Boolean)); if(assignees.length===0) assignees=['未割当'];
+    let priorities = uniq((o.priorities||[]).filter(Boolean)); if(priorities.length===0) priorities=['高','中','低','未来'];
+    let statuses = uniq((o.statuses||[]).filter(Boolean)); if(statuses.length===0) statuses=['Non touch','Doing','Passed'];
+    return { assignees, priorities, statuses };
+  }
+
+  // Mode switch
+  $('modeLocal').onchange = ()=>{ if($('modeLocal').checked){ switchMode('local'); } };
+  $('modeCloud').onchange = ()=>{ if($('modeCloud').checked){ switchMode('cloud'); } };
+  function switchMode(m){ mode=m; $('cloudSec').style.display = (m==='cloud')?'block':'none'; render(); if(m==='cloud'){ initFirebaseFromInputs(false); } else { detachCloudListeners(); }}
+
+  // Firebase inputs
+  $('fbApiKey').value = fbConf.apiKey||''; $('fbAuthDomain').value=fbConf.authDomain||''; $('fbProjectId').value=fbConf.projectId||'';
+  $('fbInitBtn').onclick = ()=> initFirebaseFromInputs(true);
+  $('fbSignInBtn').onclick = ()=> fbSignIn();
+  $('fbAnonBtn').onclick = ()=> fbAnon();
+  $('fbSignOutBtn').onclick = ()=> fbSignOut();
+
+  function loadFbConf(){ try{ const raw=localStorage.getItem(FB_KEY); return raw?JSON.parse(raw):{} }catch{ return {} } }
+  function saveFbConf(){ localStorage.setItem(FB_KEY, JSON.stringify({ apiKey:$('fbApiKey').value.trim(), authDomain:$('fbAuthDomain').value.trim(), projectId:$('fbProjectId').value.trim() })); }
+
+  async function initFirebaseFromInputs(showMsg){
+    try{
+      saveFbConf();
+      const { initializeApp, getAuth, getFirestore, onAuthStateChanged } = window._fb;
+      if(!initializeApp){ alert('Firebase SDKの読み込みに失敗しました'); return; }
+      if(fbApp){ detachCloudListeners(); }
+      fbApp = initializeApp({ apiKey:$('fbApiKey').value.trim(), authDomain:$('fbAuthDomain').value.trim(), projectId:$('fbProjectId').value.trim() });
+      fbAuth = getAuth(fbApp); fbDb = getFirestore(fbApp);
+      onAuthStateChanged(fbAuth, (user)=>{ if(user && mode==='cloud'){ attachCloudListeners(); } });
+      if(showMsg) alert('Firebase初期化完了');
+    }catch(e){ alert('Firebase初期化失敗: '+(e&&e.message||e)); }
+  }
+
+  async function fbSignIn(){ try{ const { GoogleAuthProvider, signInWithPopup } = window._fb; await signInWithPopup(fbAuth, new GoogleAuthProvider()); alert('サインインしました'); }catch(e){ alert('サインイン失敗: '+(e&&e.message||e)); } }
+  async function fbAnon(){ try{ const { signInAnonymously } = window._fb; await signInAnonymously(fbAuth); alert('匿名で参加しました'); }catch(e){ alert('匿名参加失敗: '+(e&&e.message||e)); } }
+  async function fbSignOut(){ try{ const { fbSignOut } = window._fb; await fbSignOut(fbAuth); detachCloudListeners(); alert('サインアウトしました'); }catch(e){} }
+
+  function detachCloudListeners(){ if(fbUnsubTasks){ fbUnsubTasks(); fbUnsubTasks=null; } if(fbUnsubSettings){ fbUnsubSettings(); fbUnsubSettings=null; } }
+
+  async function attachCloudListeners(){
+    const { collection, onSnapshot, query, orderBy, getDoc, doc } = window._fb;
+    // settings
+    const settingsRef = doc(fbDb, 'meta', 'settings');
+    fbUnsubSettings = onSnapshot(settingsRef, async (snap)=>{
+      if(snap.exists()){
+        const data = snap.data();
+        OPTIONS = sanitizeOptions({ assignees: data.assignees||[], priorities: data.priorities||[], statuses: data.statuses||[] });
+        saveOptions(); populateQuickSelects(); refreshTabs(); render();
+      }
+    });
+    // tasks
+    const q = query(collection(fbDb, 'tasks'), orderBy('createdAt','desc'));
+    fbUnsubTasks = onSnapshot(q, (qs)=>{
+      const arr=[]; qs.forEach(doc=>{ const t=doc.data(); arr.push({ ...t, id: doc.id }); });
+      tasks = arr.map(t=>({ id:t.id, title:t.title, memo:t.memo||'', review:t.review||'', due:t.due||undefined,
+        assignee:t.assignee||OPTIONS.assignees[0], priority:t.priority||OPTIONS.priorities[1], status:t.status||OPTIONS.statuses[0],
+        createdAt: t.createdAt?.toMillis? t.createdAt.toMillis(): (t.createdAt||Date.now()), updatedAt: t.updatedAt?.toMillis? t.updatedAt.toMillis(): (t.updatedAt||Date.now()),
+        completed: !!t.completed, completedAt: t.completedAt?.toMillis? t.completedAt.toMillis(): t.completedAt, calendarEventIds: t.calendarEventIds||{} }));
+      saveTasks(); render();
+    });
+  }
+
+  async function saveOptionsCloud(){
+    if(!fbDb) return; const { doc, setDoc, serverTimestamp } = window._fb; await setDoc(doc(fbDb,'meta','settings'), { ...OPTIONS, updatedAt: serverTimestamp() }, { merge:true });
+  }
+
+  // ---------- Persistence (local) ----------
+  function saveTasks(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks)); }
+  function loadTasks(){ try{ const raw=localStorage.getItem(STORAGE_KEY); const arr= raw?JSON.parse(raw):[]; return arr.map(t=> ({...t, completed: !!t.completed})) }catch{ return [] } }
+  function saveOptions(){ localStorage.setItem(OPT_KEY, JSON.stringify(OPTIONS)); }
+  function loadOptions(){ try{ const raw=localStorage.getItem(OPT_KEY); return raw?JSON.parse(raw):null }catch{ return null } }
+
+  function uid(){ return Math.random().toString(36).slice(2)+Date.now().toString(36) }
+
+  // ---------- CRUD ----------
+  async function addQuick(){
+    const title=qTitle.value.trim(); if(!title){ alert('タイトルは必須です'); return; }
+    if(!qDue.value){ alert('期限は必須です'); return; }
+    const now=Date.now();
+    const t={ id:uid(), title, memo:qMemo.value, review:qReview.value, due:qDue.value,
+      assignee:qAssignee.value, priority:qPriority.value, status:qStatus.value, createdAt:now, updatedAt:now, completed:false };
+    if(mode==='cloud' && fbDb){
+      const { collection, addDoc, serverTimestamp } = window._fb;
+      await addDoc(collection(fbDb,'tasks'), { ...t, id: undefined, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+    } else { tasks=[t, ...tasks]; saveTasks(); }
+    qTitle.value=''; qDue.value=''; qMemo.value=''; qReview.value=''; qAssignee.value=OPTIONS.assignees[0]; qPriority.value=OPTIONS.priorities.includes('中')?'中':OPTIONS.priorities[0]; qStatus.value=OPTIONS.statuses[0];
+    render();
+  }
+
+  async function updateTask(id, patch){
+    if(mode==='cloud' && fbDb){
+      const { doc, updateDoc, serverTimestamp } = window._fb; await updateDoc(doc(fbDb,'tasks',id), { ...patch, updatedAt: serverTimestamp() });
+    } else {
+      tasks = tasks.map(t=> t.id===id? { ...t, ...patch, updatedAt: Date.now() }: t); saveTasks(); render();
+    }
+  }
+
+  async function removeTask(id){
+    if(mode==='cloud' && fbDb){ const { doc, deleteDoc } = window._fb; await deleteDoc(doc(fbDb,'tasks',id)); }
+    else { tasks = tasks.filter(t=> t.id!==id); saveTasks(); render(); }
+  }
+
+  // ---------- Rendering ----------
+  function render(){
+    refreshTabs();
+    // filter by tab
+    let list = tasks.slice();
+    if(currentTab==='completed'){ list = list.filter(t=>t.completed); }
+    else if(currentTab!=='all'){ list = list.filter(t=>!t.completed && t.status===currentTab); }
+
+    // sort: 期限が近い→優先度→更新
+    const priOrder = {}; OPTIONS.priorities.forEach((p,i)=> priOrder[p]=i);
+    list.sort((a,b)=>{ const ad=a.due?new Date(a.due).getTime():Infinity; const bd=b.due?new Date(b.due).getTime():Infinity; if(ad!==bd) return ad-bd; if(a.priority!==b.priority) return (priOrder[a.priority]??99)-(priOrder[b.priority]??99); return b.updatedAt-a.updatedAt; });
+
+    // draw
+    listEl.innerHTML = '';
+    if(list.length===0){ const empty=document.createElement('div'); empty.className='card'; empty.style.padding='40px'; empty.style.textAlign='center'; empty.style.color='var(--muted)'; empty.textContent='該当タスクがありません'; listEl.appendChild(empty); return; }
+
+    list.forEach(t=>{ listEl.appendChild(taskRow(t)); });
+  }
+
+  function taskRow(t){
+    const wrap=document.createElement('div'); wrap.className='task';
+
+    const check=document.createElement('div'); check.className='check'+(t.completed?' done':''); check.title=t.completed?'完了済み':'未完了'; check.innerHTML = t.completed?'<span>✓</span>':'';
+    check.onclick=()=>{ if(t.completed) return; confirmComplete(async()=>{ await updateTask(t.id,{ completed:true, completedAt: Date.now() }); }); };
+
+    // Title button (toggle details / review)
+    const titleBtn=document.createElement('button'); titleBtn.className='title-btn'; titleBtn.textContent=t.title;
+
+    const right=document.createElement('div'); right.className='row-center';
+    const delBtn=btn('削除','danger'); const evBtn=btn('予定に登録','primary');
+    delBtn.onclick=()=>{ if(confirm('削除しますか？')) removeTask(t.id); };
+    evBtn.onclick=()=> createEventForTask(t);
+
+    const header=document.createElement('div'); header.className='grid';
+    header.appendChild(check); header.appendChild(titleBtn); header.appendChild(right);
+    right.appendChild(evBtn); right.appendChild(delBtn);
+
+    const details=document.createElement('div'); details.style.marginTop='8px'; details.style.display='none';
+
+    if(currentTab==='completed'){
+      const reviewBlock=document.createElement('div');
+      reviewBlock.innerHTML = `<div class="h">振り返り</div><textarea class="input" rows="4" id="rv-${t.id}"></textarea>`;
+      details.appendChild(reviewBlock);
+      titleBtn.onclick=()=>{ details.style.display = details.style.display==='none'?'block':'none'; const rv=$(`rv-${t.id}`); if(rv) rv.value = t.review||''; };
+      details.addEventListener('focusout', ()=>{ const rv=$(`rv-${t.id}`); if(rv) updateTask(t.id,{ review: rv.value }); });
+    } else {
+      const meta=document.createElement('div');
+      meta.innerHTML = `<div class="chips" style="margin-bottom:8px">
+        <span class="badge b-status">担当: ${escapeHtml(t.assignee||'未割当')}</span>
+        <span class="badge b-status">優先度: ${escapeHtml(t.priority)}</span>
+        <span class="badge b-status">ステータス: ${escapeHtml(t.status)}</span>
+      </div>`;
+      const editRow=document.createElement('div'); editRow.className='row';
+      editRow.innerHTML = `
+        <div class="col"><div class="h">期限</div><input class="input" type="date" id="d-${t.id}" /></div>
+        <div class="col"><div class="h">担当者</div><select class="input" id="a-${t.id}">${OPTIONS.assignees.map(p=>`<option>${p}</option>`).join('')}</select></div>
+        <div class="col"><div class="h">優先度</div><select class="input" id="p-${t.id}">${OPTIONS.priorities.map(p=>`<option>${p}</option>`).join('')}</select></div>
+        <div class="col"><div class="h">ステータス</div><select class="input" id="s-${t.id}">${OPTIONS.statuses.map(s=>`<option>${s}</option>`).join('')}</select></div>
+      `;
+      const memoBlock=document.createElement('div'); memoBlock.style.marginTop='8px'; memoBlock.innerHTML = `<div class="h">メモ</div><textarea class="input" rows="3" id="m-${t.id}"></textarea>`;
+
+      details.appendChild(meta); details.appendChild(editRow); details.appendChild(memoBlock);
+      titleBtn.onclick=()=>{
+        details.style.display = details.style.display==='none'?'block':'none';
+        const d=$(`d-${t.id}`), a=$(`a-${t.id}`), p=$(`p-${t.id}`), s=$(`s-${t.id}`), m=$(`m-${t.id}`);
+        if(d) d.value=t.due||''; if(a) a.value=t.assignee||OPTIONS.assignees[0]; if(p) p.value=t.priority; if(s) s.value=t.status; if(m) m.value=t.memo||'';
+      };
+      details.addEventListener('focusout', ()=>{
+        const d=$(`d-${t.id}`), a=$(`a-${t.id}`), p=$(`p-${t.id}`), s=$(`s-${t.id}`), m=$(`m-${t.id}`);
+        const patch={}; if(d) patch.due=d.value||t.due; if(a) patch.assignee=a.value; if(p) patch.priority=p.value; if(s) patch.status=s.value; if(m) patch.memo=m.value; updateTask(t.id, patch);
+      });
+    }
+
+    wrap.appendChild(header); wrap.appendChild(details); return wrap;
+  }
+
+  function btn(label, kind){ const b=document.createElement('button'); b.className='btn'+(kind?' '+kind:''); b.textContent=label; return b; }
+  function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c=> ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[c]) ); }
+
+  // Complete confirm modal
+  function confirmComplete(onOK){ const dlg=document.createElement('div'); dlg.className='modal'; dlg.innerHTML = `<div class="panel"><div style="font-weight:600;margin-bottom:8px">タスクを完了させますが良いですか？</div><div class="xsmall muted">完了後は「完了リスト」から参照できます。</div><div class="actions"><button class="btn" id="ccCancel">キャンセル</button><button class="btn ok big-ok" id="ccOK">OK</button></div></div>`; document.body.appendChild(dlg); $('ccCancel').onclick=()=> dlg.remove(); $('ccOK').onclick=()=>{ onOK&&onOK(); dlg.remove(); }; }
+
+  // ---- Google Calendar (same as前版) ----
+  let apiKeyEl=$('apiKey'), clientIdEl=$('clientId');
+  $('initBtn').onclick = initGapi; $('signInBtn').onclick = signIn; $('signOutBtn').onclick = signOut; $('calFetchBtn').onclick = loadCalendars;
+  function saveGConf(){ localStorage.setItem(GCAL_KEY, JSON.stringify({ apiKey: apiKeyEl.value.trim(), clientId: clientIdEl.value.trim() })); }
+  function loadGConf(){ try{ const raw=localStorage.getItem(GCAL_KEY); return raw?JSON.parse(raw):{} }catch{ return {} } }
+  const gconf = loadGConf(); apiKeyEl.value=gconf.apiKey||''; clientIdEl.value=gconf.clientId||'';
+
+  async function initGapi(){ saveGConf(); const g=window.gapi; if(!g){ alert('gapiが読み込まれていません（ネットワークを確認）'); return; } try{ await new Promise(res=> g.load('client:auth2', res)); await g.client.init({ apiKey: apiKeyEl.value.trim(), clientId: clientIdEl.value.trim(), discoveryDocs:['https://www.googleapis.com/discovery/v1/apis/calendar/v3/rest'], scope:'https://www.googleapis.com/auth/calendar.events' }); gapiInited=true; alert('初期化完了'); }catch(e){ alert('初期化失敗: '+(e&&e.message||e)); } }
+  async function signIn(){ if(!gapiInited) return alert('先に初期化してください'); try{ await gapi.auth2.getAuthInstance().signIn(); alert('サインインしました'); }catch(e){ alert('サインイン失敗: '+(e&&e.error||e&&e.message||e)); } }
+  async function signOut(){ try{ await gapi.auth2.getAuthInstance().signOut(); alert('サインアウトしました'); }catch(e){} }
+  async function loadCalendars(){ if(!gapiInited) return alert('先に初期化してください'); try{ const res=await gapi.client.calendar.calendarList.list(); calendars=(res.result.items||[]).map(i=>({id:i.id, summary:i.summary})); drawCalendars(); }catch(e){ alert('カレンダー取得失敗: '+(e&&e.message||e)); } }
+  function drawCalendars(){ const box=$('calList'); box.innerHTML=''; selectedCalendars=new Set([...selectedCalendars].filter(id=>calendars.some(c=>c.id===id))); calendars.forEach(c=>{ const label=document.createElement('label'); label.className='row-center'; label.style.border='1px solid var(--line)'; label.style.padding='6px 10px'; label.style.borderRadius='12px'; label.style.minWidth='160px'; const chk=document.createElement('input'); chk.type='checkbox'; chk.checked=selectedCalendars.has(c.id); chk.onchange=(e)=>{ if(e.target.checked) selectedCalendars.add(c.id); else selectedCalendars.delete(c.id); }; const span=document.createElement('span'); span.textContent=c.summary; span.style.marginLeft='6px'; label.appendChild(chk); label.appendChild(span); box.appendChild(label); }); }
+
+  async function createEventForTask(t){ if(!t.due) return alert('期限(年月日)が必要です'); if(selectedCalendars.size===0) return alert('登録先カレンダーを選択してください'); const start=t.due; const endDate=new Date(t.due); endDate.setDate(endDate.getDate()+1); const end=endDate.toISOString().slice(0,10); const desc=[`担当: ${t.assignee||'未割当'}`, `優先度: ${t.priority}`, `ステータス: ${t.status}`, t.memo?`メモ:
+${t.memo}`:'', t.review?`
+振り返り:
+${t.review}`:''].filter(Boolean).join("
+
+"); for(const calId of selectedCalendars){ try{ const res=await gapi.client.calendar.events.insert({ calendarId: calId, resource:{ summary:t.title, description:desc, start:{date:start}, end:{date:end} } }); const eventId=res.result.id; t.calendarEventIds=t.calendarEventIds||{}; t.calendarEventIds[calId]=eventId; await updateTask(t.id,{ calendarEventIds: t.calendarEventIds }); }catch(e){ alert(`イベント作成失敗 (${calId}): `+(e&&e.message||e)); } } alert('登録完了'); }
+
+  // First render
+  render();
+})();
+</script>
+</body>
+</html>
